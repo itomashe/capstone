@@ -1,0 +1,144 @@
+---
+title: "Milestone Report"
+author: "Igor Tomashevskiy"
+date: "Friday, March 19, 2016"
+output: html_document
+---
+
+The report is the initial analysis of data from twitter, news and blogs provided for the Capstone project.  
+
+###Data Transformations:
+
+```{r cache=TRUE, warning=FALSE}
+blogs<-readLines("en_US.blogs.txt")
+news<-readLines("en_US.news.txt")
+tws<-readLines("en_US.twitter.txt")
+blogs_line<-length(blogs)
+news_line<-length(news)
+tws_line<-length(tws)
+````
+The news data set contains 1010242 lines, the blog data set contains 899288 lines and twitter data set contains 2360148 lines. Word count for each file can be done by using wc function from qdap R package.
+
+```{r cache=TRUE, warning=FALSE}
+library(qdap)
+word.count.blog<-wc(blogs,byrow=FALSE,digit.remove=TRUE)
+word.count.news<-wc(news,byrow=FALSE,digit.remove=TRUE)
+word.count.tws<-wc(tws,byrow=FALSE,digit.remove=TRUE)
+```
+
+word.count.blog = 36893516, word.count.news = 33376745, word.count.tws = 29430648.
+Please note that digits were removed from the data.
+The next step is to randomly select records for testing, The sample() function will help us select 1% of records from each file:
+
+```{r cache=TRUE}
+set.seed(12345)
+blog_idx<-sample(blogs_line,size=floor(blogs_line/100))
+news_idx<-sample(news_line,size=floor(news_line/100))
+tws_idx<-sample(tws_line,size=floor(tws_line/100))
+```
+
+We use indices to select records from the data:
+```{r cache=TRUE}
+sample.blogs<-blogs[blog_idx]
+sample.news<-news[news_idx]
+sample.tws<-tws[tws_idx]
+sample.data<-c(sample.blogs,sample.news,sample.tws)
+writeLines(sample.data,con="sample_data.txt","\n")
+
+```
+Now, after setting up all the necessary elements, we store the sample data in a corpus. The corpus is created from text which is stored in the character vector sample.data.
+The standard for text analysis in R is the tm package. It provides functionality to perform the most common data preparation operations.
+
+```{r}
+library(tm)
+sample.corpus<-Corpus(VectorSource(sample.data))
+
+```
+Next we need to do some data cleansing: remove numbers, remove punctuation, remove stop words, convert all letters to lower case, strip whitespace and perform a stemming of terms.
+```{r}
+
+library(stringr)
+library(SnowballC)
+sample.corpus<-tm_map(sample.corpus,removeNumbers)
+sample.corpus<-tm_map(sample.corpus,str_replace_all,pattern="[^[:alnum:]]",replacement=" ")
+sample.corpus<-tm_map(sample.corpus,removeWords, words=stopwords("en"))
+sample.corpus<-tm_map(sample.corpus,tolower)
+sample.corpus<-tm_map(sample.corpus,stripWhitespace)
+sample.corpus<-tm_map(sample.corpus,stemDocument)
+corpus.clean<-tm_map(sample.corpus,PlainTextDocument)
+tdm<-TermDocumentMatrix(corpus.clean)
+```
+Next step is to construct term-document matrices on n-gram.
+Within the tm framework, we can construct n-grams using the R interface to the Weka program using the RWeka package.
+
+```{r}
+library(RWeka)
+OnegramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=1,max=1))}
+tdm_onegram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=OnegramTokenizer))
+BigramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=2,max=2))}
+tdm_bigram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=BigramTokenizer))
+ThreegramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=3,max=3))}
+tdm_threegram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=ThreegramTokenizer))
+```
+The disadvantage of a term-document matrix is the fact that the matrix is very big and can exceed R's calculations limits, as a result we will see overflow error message.
+```{r}
+tdm_onegram
+```
+We need to remove sparse terms, with sparsity threshold of 0.99:
+```{r}
+tdms_onegram<-removeSparseTerms(tdm_onegram,0.99)
+```
+Using the tdms_onegram we can find the frequency count of all words in a corpus and plot the frequency of words that used at least 1500 times in the corpus:
+```{r warning=FALSE}
+library(ggplot2)
+word.freq<-sort(rowSums(as.matrix(tdms_onegram)),decreasing=TRUE)
+word.freq.df<-data.frame(word=names(word.freq),freq=word.freq)
+word.freq.df.1500<-subset(word.freq.df,freq>1500)
+plot1<-word.freq.df.1500%>%ggplot(aes(word,freq))+geom_bar(stat="identity")
+plot1
+```
+
+The most common words in the data set are shown above. The list is dominated by the functional words. In general the corpus will  be reflecting the data from which it was constructed.
+
+
+```{r}
+count.words<-rowSums(as.matrix(tdms_onegram))
+count.words<-as.numeric(count.words)
+hist(count.words,breaks=100,xlab="Words count",main="Words count histogram", col="blue")
+```
+
+
+```{r}
+head(table(word.freq),30)
+
+```
+The above data (frequency of frequencies) shows that there are many terms that occur just once. These rare words make up a big part of the corpus.
+
+We could create similar statistics using the above approach for n-grams(n=2,3).  
+For example(n=2):  
+
+```{r}
+tdms_bigram<-removeSparseTerms(tdm_bigram,0.99)
+bigram.freq<-sort(rowSums(as.matrix(tdms_bigram)),decreasing=TRUE)
+bigram.freq.df<-data.frame(bigram=names(bigram.freq),freq=bigram.freq)
+bigram.freq.df.150<-subset(bigram.freq.df,freq>150)
+plot2<-bigram.freq.df.150%>%ggplot(aes(bigram,freq))+geom_bar(stat="identity")
+plot2
+```
+
+###Possible Application Design:
+
+1.Create frequency tables for n-gram matrices (n=1,2,3), use them for probability evaluations.    
+2.Condition the likelihood of "word" in the context of previous words.  
+3.The probability of the word depends on the probabilty of the n previous words.  
+4.Compute the product of conditional probabilities.  
+
+###Questions to consider:  
+
+1.For higher n more data is needed.    
+2.More data will exceed R calculations limits.    
+3.A separate test corpus could be required to evaluate the model.     
+4.It is hard to predict much about the words that you never or barely ever observed in the original files.
+
+
+  
