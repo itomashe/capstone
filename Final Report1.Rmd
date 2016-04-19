@@ -9,8 +9,8 @@ The report is the final analysis of data from twitter, news and blogs provided f
 
 ###Data Transformations:
 
-Data Transformation script was mostly following 1
-
+Data Transformation script was mostly following 1. The data set is too big to handle in R, so we applied the below sripts just to news data set. 
+It could be easily expanded to other data sets. 
 ```{r warning=FALSE}
 news.data<-scan(what="c",sep="\n",file="en_US.news.txt")
 news.data<-tolower(news.data)
@@ -32,8 +32,20 @@ prob<-trigram.df$freq/34426772
 trigram.df<-cbind(trigram.df,prob)
 
 ````
+At this point we have enough data to calculate the maximum likelihood estimate of the probability of N-gram based on the news data.
+For example:  
+P(jerry brown)=count(jerry brown)/count(jerry)
+
+The major problem with MLE is that it assigns zero probabilty to any N-gram not in the Corpus(news data set)
+To avoid this problem 'smoothing' is used, to assign a small but non-zero probability to these "zero probability n-grams"
+Backoff is another method for dealing with unseen n-gram.
+Katz's back-off model and news data set will be used to create the Shiny application.
+The estimate for n-gram is allowed to back off through shorter histories.
+If n-gram has appered more than k times(k is set to 0), then an n-fram estimate is used, if n-gram did not appear then we will use an estimate from a shorter n-gram. This recursion can continue down, so that we can start with a trigram model and end up estimating the next word based on unigram frequncies.
+Such models are simple and in practice work well.
 
 The next step is to randomly select records for testing, The sample() function will help us select 1% of records from each file:
+
 
 ```{r cache=TRUE}
 set.seed(12345)
