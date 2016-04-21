@@ -29,8 +29,15 @@ Applied Methods (continued)
 The estimate for n-gram is allowed to back off through shorter histories.
 If N-gram has appeared more than k times(k is set to 0), then an N-gram estimate is used, if N-gram did not appear, then we will use an estimate from a shorter N-gram. This recursion can continue down, so that we can start with a trigram model and end up estimating the next word based on unigram frequencies.
 - The selection of this model was based on the fact that such models are simple and in practice work well.
-- The simple Shiny application was created, it can be seen at 
+- The simple Shiny application was created, it can be seen at [https://itomashe.shinyapps.io/ShinyApp2](https://itomashe.shinyapps.io/ShinyApp2/)
 
 Shiny Application  
 ========================================================
+ ![text](NextWord.png) 
+ 
+ ***
+- Please note that initial load of the application can take several minutes. After the initial load, words can be entered in provided field. Next words will appear in blue color.
+- Only news data set is loaded, so the 
+- The R scripts related to the application, milestone report, references to used materials, etc can be found in the GitHub repo:
+
  
