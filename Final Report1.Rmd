@@ -1,22 +1,38 @@
 ---
-title: "Final Report"
-author: "Igor Tomashevskiy"
-date: "Friday, April 19, 2016"
+title: "Final Notes"
+
+date: "Friday, April 22, 2016"
 output: html_document
 ---
 
-The report is the final analysis of data from twitter, news and blogs provided for the Capstone project.  
+The report contains the final notes for the Capstone project.  
 
 ###Data Transformations:
-
-Data Transformation script was mostly following 1. The data set is too big to handle in R, so we applied the below sripts just to news data set. 
-It could be easily expanded to other data sets. 
+Data Transformations described in the Milestone report are limited to a small percentage of the available data due to limitation of R and available hardware. Alternative way would be to use scripts shown in [1]. We applied the below sripts just to 'news' data set. 
+It could be easily expanded to other data sets. List of R libraries is below:
 ```{r warning=FALSE}
+library(qdap)
+library(tm)
+library(stringr)
+library(SnowballC)
+library(RWeka)
+library(ggplot2)
+library(swiftcap)
+library(shiny)
+
 news.data<-scan(what="c",sep="\n",file="en_US.news.txt")
+
+````
+In order to built and test model, we need to split a data set into train (~95%) and test (~5%) :
+```{r}
+samplen<-length(news.data)
+news.data.train<-news.data[1:floor(samplen/1.05)]
+news.data.test<-news.data[(length(news.data.train)+1):samplen]
+news.data<-news.data.train     ## not needed, included just to combine pieces of code from different sources.
 news.data<-tolower(news.data)
 tokens<-unlist(strsplit(news.data,"[^a-z]+"))
 tokens<-tokens[tokens!=""]
-length(tokens)
+n=length(tokens)
 unigram<-sort(table(tokens),decreasing=T)
 tokens2<-c(tokens[-1],".")
 freq<-sort(table(paste(tokens,tokens2)),decreasing=T)     #bigram frequency
@@ -26,155 +42,33 @@ trigram_freq<-sort(table(trigrams),decreasing=T)
 unigram.df<-data.frame(unigram=names(unigram),freq=unigram)
 bigram.df<-data.frame(bigram=names(freq),freq=freq)
 trigram.df<-data.frame(trigram=names(trigram_freq),freq=trigram_freq)
-prob<-bigram.df$freq/34426772
+prob<-bigram.df$freq/n
 bigram.df<-cbind(bigram.df,prob)
-prob<-trigram.df$freq/34426772
+prob<-trigram.df$freq/n
 trigram.df<-cbind(trigram.df,prob)
 
 ````
-At this point we have enough data to calculate the maximum likelihood estimate of the probability of N-gram based on the news data.
+We have data frames for unigrams, bigrams and trigrams. At this point we have enough data to calculate the maximum likelihood estimate of the probability of N-gram based on the news data.
 For example:  
-P(jerry brown)=count(jerry brown)/count(jerry)
+P('jerry brown')=count('jerry brown')/count('jerry')
 
 The major problem with MLE is that it assigns zero probabilty to any N-gram not in the Corpus(news data set)
-To avoid this problem 'smoothing' is used, to assign a small but non-zero probability to these "zero probability n-grams"
-Backoff is another method for dealing with unseen n-gram.
+To avoid this problem 'smoothing' is used, to assign a small but non-zero probability to these "zero probability N-grams"
+Back-off is another method for dealing with unseen n-gram.
 Katz's back-off model and news data set will be used to create the Shiny application.
 The estimate for n-gram is allowed to back off through shorter histories.
-If n-gram has appered more than k times(k is set to 0), then an n-fram estimate is used, if n-gram did not appear then we will use an estimate from a shorter n-gram. This recursion can continue down, so that we can start with a trigram model and end up estimating the next word based on unigram frequncies.
-Such models are simple and in practice work well.
-
-The next step is to randomly select records for testing, The sample() function will help us select 1% of records from each file:
+If n-gram has appered more than k times(k is set to 0), then an n-fram estimate is used, if n-gram did not appear then we will use an estimate from a shorter n-gram. This recursion can continue down, so that we can start with a trigram model and end up estimating the next word based on unigram frequencies.
+Such models are simple and in practice work well. Examples and details of such implementation can be found [2,3,4,5,6 and 7]
 
 
-```{r cache=TRUE}
-set.seed(12345)
-blog_idx<-sample(blogs_line,size=floor(blogs_line/100))
-news_idx<-sample(news_line,size=floor(news_line/100))
-tws_idx<-sample(tws_line,size=floor(tws_line/100))
-```
+### References
 
-We use indices to select records from the data:
-```{r cache=TRUE}
-sample.blogs<-blogs[blog_idx]
-sample.news<-news[news_idx]
-sample.tws<-tws[tws_idx]
-sample.data<-c(sample.blogs,sample.news,sample.tws)
-
-writeLines(sample.data,con="sample_data.txt","\n")
-
-```
-In order to built and test model, we need to split a data set into train (~95%) and test (~5%) :
-```{r}
-samplen<-length(sample.data)
-sample.data.train<-sample.data[1:floor(samplen/1.05)]
-sample.data.test<-sample.data[(length(sample.data.train)+1):samplen]
-```
-
-Now, after setting up all the necessary elements, we store the sample data in a corpus. The corpus is created from text which is stored in the character vector sample.data.train
-The standard for text analysis in R is the tm package. It provides functionality to perform the most common data preparation operations.
-
-```{r}
-library(tm)
-sample.corpus<-Corpus(VectorSource(sample.data.train))
-
-```
-Next we need to do some data cleansing: remove numbers, remove punctuation, convert all letters to lower case, strip whitespace:
-
-
-```{r}
-library(stringr)
-library(SnowballC)
-sample.corpus<-tm_map(sample.corpus,removeNumbers)
-sample.corpus<-tm_map(sample.corpus,str_replace_all,pattern="[^[:alnum:]]",replacement=" ")
-#sample.corpus<-tm_map(sample.corpus,removeWords, words=stopwords("en"))
-sample.corpus<-tm_map(sample.corpus,tolower)
-sample.corpus<-tm_map(sample.corpus,stripWhitespace)
-#sample.corpus<-tm_map(sample.corpus,stemDocument)
-corpus.clean<-tm_map(sample.corpus,PlainTextDocument)
-tdm<-TermDocumentMatrix(corpus.clean)
-```
-
-Next step is to construct term-document matrices on n-gram.
-Within the tm framework, we can construct n-grams using the R interface to the Weka program using the RWeka package.
-
-```{r}
-library(RWeka)
-OnegramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=1,max=1))}
-tdm_onegram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=OnegramTokenizer))
-BigramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=2,max=2))}
-tdm_bigram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=BigramTokenizer))
-TrigramTokenizer<-function(x){NGramTokenizer(x,Weka_control(min=3,max=3))}
-tdm_trigram<-TermDocumentMatrix(corpus.clean,control = list(tokenize=TrigramTokenizer))
-```
-The disadvantage of a term-document matrix is the fact that the matrix is very big and can exceed R's calculations limits, as a result we will see overflow error message.
-```{r}
-#tdm_onegram
-```
-We need to remove sparse terms, with sparsity threshold of 0.9999:
-```{r}
-tdms_onegram<-removeSparseTerms(tdm_onegram,0.9999)
-tdms_bigram<-removeSparseTerms(tdm_bigram,0.999)
-tdms_trigram<-removeSparseTerms(tdm_trigram,0.9999)
-word.freq<-sort(rowSums(as.matrix(tdms_onegram)),decreasing=TRUE)
-bigram.freq<-sort(rowSums(as.matrix(tdms_bigram)),decreasing=TRUE)
-trigram.freq<-sort(rowSums(as.matrix(tdms_trigram)),decreasing=TRUE)
-
-bigram.freq.df<-data.frame(bigram=names(bigram.freq),freq=bigram.freq)
-trigram.freq.df<-data.frame(trigram=names(trigram.freq),freq=trigram.freq)
-```
-
-Using the tdms_onegram we can find the frequency count of all words in a corpus and plot the frequency of words that used at least 1500 times in the corpus:
-```{r warning=FALSE}
-library(ggplot2)
-word.freq<-sort(rowSums(as.matrix(tdms_onegram)),decreasing=TRUE)
-word.freq.df<-data.frame(word=names(word.freq),freq=word.freq)
-word.freq.df.1500<-subset(word.freq.df,freq>1500)
-plot1<-word.freq.df.1500%>%ggplot(aes(word,freq))+geom_bar(stat="identity")
-plot1
-```
-
-The most common words in the data set are shown above. The list is dominated by the functional words. In general the corpus will  be reflecting the data from which it was constructed.
-
-
-```{r}
-count.words<-rowSums(as.matrix(tdms_onegram))
-count.words<-as.numeric(count.words)
-hist(count.words,breaks=100,xlab="Words count",main="Words count histogram", col="blue")
-```
-
-
-```{r}
-head(table(word.freq),30)
-
-```
-The above data (frequency of frequencies) shows that there are many terms that occur just once. These rare words make up a big part of the corpus.
-
-We could create similar statistics using the above approach for n-grams(n=2,3).  
-For example(n=2):  
-
-```{r}
-tdms_bigram<-removeSparseTerms(tdm_bigram,0.99)
-bigram.freq<-sort(rowSums(as.matrix(tdms_bigram)),decreasing=TRUE)
-bigram.freq.df<-data.frame(bigram=names(bigram.freq),freq=bigram.freq)
-bigram.freq.df.150<-subset(bigram.freq.df,freq>150)
-plot2<-bigram.freq.df.150%>%ggplot(aes(bigram,freq))+geom_bar(stat="identity")
-plot2
-```
-
-###Possible Application Design:
-
-1.Create frequency tables for n-gram matrices (n=1,2,3), use them for probability evaluations.    
-2.Condition the likelihood of "word" in the context of previous words.  
-3.The probability of the word depends on the probabilty of the n previous words.  
-4.Compute the product of conditional probabilities.  
-
-###Questions to consider:  
-
-1.For higher n more data is needed.    
-2.More data will exceed R calculations limits.    
-3.A separate test corpus could be required to evaluate the model.     
-4.It is hard to predict much about the words that you never or barely ever observed in the original files.
-
+- [1] Bigrams and Trigrams. John Fry. www.english.boisestate.edu/johnfry/files/2013/04/bigram-2x2.pdf
+- [2] Foundations of Statistical Natural Language Processing. Christopher D. Manning and Hinrich Schutze. MIT, 1999
+- [3] Hands -On Data Science with R Text Mining. Graham Williams. www.handsondatascience.com/TextMiningO.pdf
+- [4] DNatural Language Processing: A model to Predict a sequence of Words. Gerald R Gendron, Jr. www.modsimworld.org/papers/2015/Natural_Language_Processing.pdf.
+- [5] An R package for creating N-gram language models. https://github/nickwallen/swiftcap
+- [6] Speech and Language Processing: An Introduction to natural language processing. Daniel Jurafsky & James Martin. 200
+- [7] An empirical study of smoothing techniques for lanuage modeling. Stanley F. Chen and Joshua Goodman. Computer Speech and Language (1999) 13.
 
   
